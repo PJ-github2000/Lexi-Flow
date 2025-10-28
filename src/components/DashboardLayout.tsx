@@ -1,8 +1,9 @@
 import { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Scale, Search, FileText, FileEdit, BarChart3, Settings, Bell, User, Menu } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Scale, Search, FileText, FileEdit, BarChart3, Settings, Bell, User, Menu, LogOut, Brain, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/hooks/useAuth";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -18,6 +20,8 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const location = useLocation();
+  const { user, role, signOut, updateRole } = useAuth();
+  const navigate = useNavigate();
 
   const navItems = [
     { icon: Search, label: "ASK", path: "/dashboard/ask", description: "Legal Research" },
@@ -97,6 +101,22 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
 
           <div className="flex items-center gap-3">
+            {role && (
+              <Badge variant="outline" className="gap-1">
+                {role === 'expert' ? (
+                  <>
+                    <Brain className="h-3 w-3" />
+                    Expert
+                  </>
+                ) : (
+                  <>
+                    <Heart className="h-3 w-3" />
+                    Simple
+                  </>
+                )}
+              </Badge>
+            )}
+            
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />
               <span className="absolute top-1 right-1 h-2 w-2 bg-accent rounded-full"></span>
@@ -109,14 +129,35 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 bg-popover">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuLabel>
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">My Account</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  </div>
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>Profile</DropdownMenuItem>
                 <DropdownMenuItem>Billing</DropdownMenuItem>
                 <DropdownMenuItem>Team</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Link to="/" className="w-full">Log out</Link>
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Switch Experience
+                </DropdownMenuLabel>
+                {role === 'expert' ? (
+                  <DropdownMenuItem onClick={() => updateRole('normal')}>
+                    <Heart className="mr-2 h-4 w-4 text-accent" />
+                    Switch to Simple Mode
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={() => updateRole('expert')}>
+                    <Brain className="mr-2 h-4 w-4 text-accent" />
+                    Switch to Expert Mode
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={signOut} className="text-destructive">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

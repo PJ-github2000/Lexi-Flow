@@ -1,46 +1,46 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Scale, Mail, Lock, User, ArrowRight } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Scale, Mail, Lock, User, ArrowRight, Brain, Heart } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 
 const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [selectedRole, setSelectedRole] = useState<'expert' | 'normal'>('normal');
+  const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate auth
-    setTimeout(() => {
-      setIsLoading(false);
-      toast({
-        title: "Welcome back!",
-        description: "You have successfully signed in.",
-      });
-      navigate("/dashboard");
-    }, 1500);
+    await signIn(email, password);
+    
+    setIsLoading(false);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate registration
-    setTimeout(() => {
-      setIsLoading(false);
-      toast({
-        title: "Account created!",
-        description: "Welcome to LexiFlow. Let's get started.",
-      });
-      navigate("/dashboard");
-    }, 1500);
+    await signUp(email, password, selectedRole, displayName);
+    
+    setIsLoading(false);
   };
 
   return (
@@ -77,6 +77,8 @@ const Auth = () => {
                         type="email"
                         placeholder="you@lawfirm.com"
                         className="pl-10"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         required
                       />
                     </div>
@@ -91,6 +93,8 @@ const Auth = () => {
                         type="password"
                         placeholder="••••••••"
                         className="pl-10"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         required
                       />
                     </div>
@@ -120,7 +124,7 @@ const Auth = () => {
               <TabsContent value="register">
                 <form onSubmit={handleRegister} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="register-name">Full Name</Label>
+                    <Label htmlFor="register-name">Full Name (Optional)</Label>
                     <div className="relative">
                       <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -128,7 +132,8 @@ const Auth = () => {
                         type="text"
                         placeholder="John Doe"
                         className="pl-10"
-                        required
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
                       />
                     </div>
                   </div>
@@ -142,6 +147,8 @@ const Auth = () => {
                         type="email"
                         placeholder="you@lawfirm.com"
                         className="pl-10"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         required
                       />
                     </div>
@@ -156,9 +163,44 @@ const Auth = () => {
                         type="password"
                         placeholder="••••••••"
                         className="pl-10"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                         required
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-3 p-4 rounded-lg bg-muted/50 border-2 border-accent/20">
+                    <Label className="text-base font-semibold">How would you like to experience LexiFlow?</Label>
+                    <RadioGroup value={selectedRole} onValueChange={(value) => setSelectedRole(value as 'expert' | 'normal')}>
+                      <div className="space-y-3">
+                        <div className="flex items-start space-x-3 p-3 rounded-lg border-2 border-transparent hover:border-accent/50 transition-all cursor-pointer">
+                          <RadioGroupItem value="expert" id="expert" className="mt-1" />
+                          <div className="flex-1">
+                            <Label htmlFor="expert" className="flex items-center gap-2 cursor-pointer font-semibold">
+                              <Brain className="h-4 w-4 text-accent" />
+                              Expert Mode
+                            </Label>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Advanced analytics, detailed insights, and comprehensive control
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-start space-x-3 p-3 rounded-lg border-2 border-transparent hover:border-accent/50 transition-all cursor-pointer">
+                          <RadioGroupItem value="normal" id="normal" className="mt-1" />
+                          <div className="flex-1">
+                            <Label htmlFor="normal" className="flex items-center gap-2 cursor-pointer font-semibold">
+                              <Heart className="h-4 w-4 text-accent" />
+                              Simple Mode
+                            </Label>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Easy-to-understand interface with friendly guidance
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </RadioGroup>
                   </div>
 
                   <div className="text-xs text-muted-foreground">
