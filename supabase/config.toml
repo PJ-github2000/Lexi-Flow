@@ -1,1 +1,20 @@
 project_id = "pmrzcheblhkslqvkzfsz"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[api.tls]
+enabled = false
+
+[functions.legal-draft]
+verify_jwt = true
+
+[functions.legal-research]
+verify_jwt = true
+
+[functions.document-analysis]
+verify_jwt = true

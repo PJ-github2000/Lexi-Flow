@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,15 +7,44 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileEdit, Sparkles, Download, RefreshCw, Save, Share2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { ModelSelector } from "@/components/ModelSelector";
+import { useAuth } from "@/hooks/useAuth";
 
 const Draft = () => {
+  const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
+  const [template, setTemplate] = useState("nda");
+  const [style, setStyle] = useState("formal");
+  const [length, setLength] = useState("medium");
+  const [jurisdiction, setJurisdiction] = useState("california");
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [draftContent, setDraftContent] = useState("");
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const { toast } = useToast();
 
-  const handleGenerate = () => {
+  useEffect(() => {
+    loadUserPreference();
+  }, [user]);
+
+  const loadUserPreference = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('preferred_model')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data?.preferred_model) {
+        setSelectedModel(data.preferred_model);
+      }
+    } catch (error) {
+      console.error('Error loading preference:', error);
+    }
+  };
+
+  const handleGenerate = async () => {
     if (!prompt.trim()) {
       toast({
         title: "Prompt required",
@@ -26,43 +55,56 @@ const Draft = () => {
     }
 
     setIsGenerating(true);
-    setTimeout(() => {
-      setIsGenerating(false);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('legal-draft', {
+        body: {
+          prompt,
+          template,
+          style,
+          length,
+          jurisdiction,
+          model: selectedModel,
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.error) {
+        if (data.error.includes('Rate limit')) {
+          toast({
+            title: "Rate limit reached",
+            description: "Please try again in a moment.",
+            variant: "destructive",
+          });
+        } else if (data.error.includes('Payment required')) {
+          toast({
+            title: "Credits needed",
+            description: "Please add credits to continue using AI features.",
+            variant: "destructive",
+          });
+        } else {
+          throw new Error(data.error);
+        }
+        return;
+      }
+
       setHasDraft(true);
-      setDraftContent(`NON-DISCLOSURE AGREEMENT
-
-This Non-Disclosure Agreement (this "Agreement") is entered into as of [Date], by and between [Disclosing Party] ("Disclosing Party") and [Receiving Party] ("Receiving Party").
-
-RECITALS
-
-WHEREAS, the Disclosing Party possesses certain confidential and proprietary information; and
-
-WHEREAS, the Receiving Party desires to receive such confidential information for the purpose of [Purpose].
-
-NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, the parties agree as follows:
-
-1. DEFINITION OF CONFIDENTIAL INFORMATION
-
-"Confidential Information" means any and all technical and non-technical information disclosed by the Disclosing Party to the Receiving Party, including but not limited to:
-(a) Trade secrets, proprietary information, and know-how;
-(b) Business plans, financial information, and customer lists;
-(c) Product specifications, designs, and prototypes.
-
-2. CONFIDENTIALITY OBLIGATIONS
-
-The Receiving Party agrees to:
-(a) Maintain the confidentiality of all Confidential Information;
-(b) Use the Confidential Information solely for the Purpose stated above;
-(c) Limit disclosure to employees with a need to know.
-
-3. TERM AND TERMINATION
-
-This Agreement shall commence on the date first written above and shall continue for a period of three (3) years.`);
+      setDraftContent(data.document);
       toast({
         title: "Draft generated!",
         description: "Your document is ready for review and editing.",
       });
-    }, 3000);
+    } catch (error) {
+      console.error('Error generating draft:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate document. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -92,7 +134,7 @@ This Agreement shall commence on the date first written above and shall continue
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="template">Document Template</Label>
-                    <Select defaultValue="nda">
+                    <Select value={template} onValueChange={setTemplate}>
                       <SelectTrigger id="template">
                         <SelectValue />
                       </SelectTrigger>
@@ -120,7 +162,7 @@ This Agreement shall commence on the date first written above and shall continue
                   <div className="grid md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="style">Writing Style</Label>
-                      <Select defaultValue="formal">
+                      <Select value={style} onValueChange={setStyle}>
                         <SelectTrigger id="style">
                           <SelectValue />
                         </SelectTrigger>
@@ -134,7 +176,7 @@ This Agreement shall commence on the date first written above and shall continue
 
                     <div className="space-y-2">
                       <Label htmlFor="length">Document Length</Label>
-                      <Select defaultValue="medium">
+                      <Select value={length} onValueChange={setLength}>
                         <SelectTrigger id="length">
                           <SelectValue />
                         </SelectTrigger>
@@ -148,7 +190,7 @@ This Agreement shall commence on the date first written above and shall continue
 
                     <div className="space-y-2">
                       <Label htmlFor="jurisdiction-draft">Jurisdiction</Label>
-                      <Select defaultValue="california">
+                      <Select value={jurisdiction} onValueChange={setJurisdiction}>
                         <SelectTrigger id="jurisdiction-draft">
                           <SelectValue />
                         </SelectTrigger>
@@ -243,6 +285,8 @@ This Agreement shall commence on the date first written above and shall continue
 
           {/* Sidebar */}
           <div className="space-y-6">
+            <ModelSelector />
+            
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Document Templates</CardTitle>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,32 +7,63 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { FileText, Upload, File, CheckCircle2, Loader2, AlertCircle, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { supabase } from "@/integrations/supabase/client";
+import { ModelSelector } from "@/components/ModelSelector";
+import { useAuth } from "@/hooks/useAuth";
 
 const Interact = () => {
-  const [files, setFiles] = useState<Array<{ name: string; status: string }>>([]);
+  const { user } = useAuth();
+  const [files, setFiles] = useState<Array<{ name: string; status: string; content?: string }>>([]);
+  const [analysisType, setAnalysisType] = useState("summarize");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasResults, setHasResults] = useState(false);
+  const [results, setResults] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const { toast } = useToast();
+
+  useEffect(() => {
+    loadUserPreference();
+  }, [user]);
+
+  const loadUserPreference = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('preferred_model')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data?.preferred_model) {
+        setSelectedModel(data.preferred_model);
+      }
+    } catch (error) {
+      console.error('Error loading preference:', error);
+    }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFiles = Array.from(e.target.files || []);
-    const newFiles = uploadedFiles.map(file => ({
-      name: file.name,
-      status: "uploading"
-    }));
     
-    setFiles(prev => [...prev, ...newFiles]);
+    uploadedFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const newFile = {
+          name: file.name,
+          status: "ready",
+          content: event.target?.result as string
+        };
+        setFiles(prev => [...prev, newFile]);
+      };
+      reader.readAsText(file);
+    });
 
-    setTimeout(() => {
-      setFiles(prev => prev.map(f => ({ ...f, status: "ready" })));
-      toast({
-        title: "Files uploaded",
-        description: `${uploadedFiles.length} file(s) ready for analysis.`,
-      });
-    }, 1500);
+    toast({
+      title: "Files uploaded",
+      description: `${uploadedFiles.length} file(s) ready for analysis.`,
+    });
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (files.length === 0) {
       toast({
         title: "No files",
@@ -43,14 +74,57 @@ const Interact = () => {
     }
 
     setIsAnalyzing(true);
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    
+    try {
+      // Combine all file contents
+      const documentText = files.map(f => `=== ${f.name} ===\n${f.content || ''}`).join('\n\n');
+
+      const { data, error } = await supabase.functions.invoke('document-analysis', {
+        body: {
+          documentText,
+          analysisType,
+          fileName: files[0]?.name || 'document',
+          model: selectedModel,
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.error) {
+        if (data.error.includes('Rate limit')) {
+          toast({
+            title: "Rate limit reached",
+            description: "Please try again in a moment.",
+            variant: "destructive",
+          });
+        } else if (data.error.includes('Payment required')) {
+          toast({
+            title: "Credits needed",
+            description: "Please add credits to continue using AI features.",
+            variant: "destructive",
+          });
+        } else {
+          throw new Error(data.error);
+        }
+        return;
+      }
+
+      setResults(data.analysis);
       setHasResults(true);
       toast({
         title: "Analysis complete!",
         description: "Document insights are ready.",
       });
-    }, 3000);
+    } catch (error) {
+      console.error('Error analyzing documents:', error);
+      toast({
+        title: "Error",
+        description: "Failed to analyze documents. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -113,7 +187,7 @@ const Interact = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="analysis-type">Analysis Type</Label>
-                  <Select defaultValue="summarize">
+                  <Select value={analysisType} onValueChange={setAnalysisType}>
                     <SelectTrigger id="analysis-type">
                       <SelectValue />
                     </SelectTrigger>
@@ -162,89 +236,9 @@ const Interact = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Accordion type="single" collapsible className="w-full">
-                    <AccordionItem value="summary">
-                      <AccordionTrigger className="text-left">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-accent" />
-                          <span className="font-semibold">Document Summary</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="prose prose-sm max-w-none">
-                        <p className="text-muted-foreground">
-                          This Non-Disclosure Agreement (NDA) establishes confidentiality obligations between two parties 
-                          for the protection of proprietary information. The agreement includes standard provisions for 
-                          definition of confidential information, exclusions, obligations of receiving party, and term 
-                          of agreement.
-                        </p>
-                      </AccordionContent>
-                    </AccordionItem>
-
-                    <AccordionItem value="clauses">
-                      <AccordionTrigger className="text-left">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-accent" />
-                          <span className="font-semibold">Key Clauses Identified</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <ul className="space-y-3">
-                          <li className="flex items-start gap-2">
-                            <div className="h-2 w-2 rounded-full bg-accent mt-2 flex-shrink-0"></div>
-                            <div>
-                              <p className="font-medium">Confidentiality Obligation</p>
-                              <p className="text-sm text-muted-foreground">
-                                Section 2.1 - Receiving party shall maintain confidential information in strict confidence
-                              </p>
-                            </div>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <div className="h-2 w-2 rounded-full bg-accent mt-2 flex-shrink-0"></div>
-                            <div>
-                              <p className="font-medium">Term and Termination</p>
-                              <p className="text-sm text-muted-foreground">
-                                Section 5 - Agreement effective for 3 years from execution date
-                              </p>
-                            </div>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <div className="h-2 w-2 rounded-full bg-accent mt-2 flex-shrink-0"></div>
-                            <div>
-                              <p className="font-medium">Return of Materials</p>
-                              <p className="text-sm text-muted-foreground">
-                                Section 4 - All materials must be returned upon request or termination
-                              </p>
-                            </div>
-                          </li>
-                        </ul>
-                      </AccordionContent>
-                    </AccordionItem>
-
-                    <AccordionItem value="risks">
-                      <AccordionTrigger className="text-left">
-                        <div className="flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4 text-destructive" />
-                          <span className="font-semibold">Risk Analysis</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-3">
-                          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
-                            <p className="font-medium text-sm text-destructive mb-1">High Risk</p>
-                            <p className="text-sm text-muted-foreground">
-                              Broad definition of confidential information may include publicly available data
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                            <p className="font-medium text-sm text-yellow-700 dark:text-yellow-500 mb-1">Medium Risk</p>
-                            <p className="text-sm text-muted-foreground">
-                              No specific exclusions for independently developed information
-                            </p>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+                  <div className="prose prose-sm max-w-none whitespace-pre-wrap">
+                    {results}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -252,6 +246,8 @@ const Interact = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
+            <ModelSelector />
+            
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Supported Analysis Types</CardTitle>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,14 +9,44 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Search, Sparkles, Download, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { ModelSelector } from "@/components/ModelSelector";
+import { useAuth } from "@/hooks/useAuth";
 
 const Ask = () => {
+  const { user } = useAuth();
   const [query, setQuery] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("california");
+  const [practiceArea, setPracticeArea] = useState("contract");
+  const [citationStyle, setCitationStyle] = useState("bluebook");
+  const [format, setFormat] = useState("irac");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasResults, setHasResults] = useState(false);
+  const [results, setResults] = useState<any>(null);
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const { toast } = useToast();
 
-  const handleResearch = () => {
+  useEffect(() => {
+    loadUserPreference();
+  }, [user]);
+
+  const loadUserPreference = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('preferred_model')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data?.preferred_model) {
+        setSelectedModel(data.preferred_model);
+      }
+    } catch (error) {
+      console.error('Error loading preference:', error);
+    }
+  };
+
+  const handleResearch = async () => {
     if (!query.trim()) {
       toast({
         title: "Query required",
@@ -27,14 +57,56 @@ const Ask = () => {
     }
 
     setIsAnalyzing(true);
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('legal-research', {
+        body: {
+          query,
+          jurisdiction,
+          practiceArea,
+          citationStyle,
+          format,
+          model: selectedModel,
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.error) {
+        if (data.error.includes('Rate limit')) {
+          toast({
+            title: "Rate limit reached",
+            description: "Please try again in a moment.",
+            variant: "destructive",
+          });
+        } else if (data.error.includes('Payment required')) {
+          toast({
+            title: "Credits needed",
+            description: "Please add credits to continue using AI features.",
+            variant: "destructive",
+          });
+        } else {
+          throw new Error(data.error);
+        }
+        return;
+      }
+
+      setResults(data.analysis);
       setHasResults(true);
       toast({
         title: "Research complete!",
         description: "Your IRAC analysis is ready.",
       });
-    }, 3000);
+    } catch (error) {
+      console.error('Error conducting research:', error);
+      toast({
+        title: "Error",
+        description: "Failed to complete research. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -75,7 +147,7 @@ const Ask = () => {
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="jurisdiction">Jurisdiction</Label>
-                    <Select defaultValue="california">
+                    <Select value={jurisdiction} onValueChange={setJurisdiction}>
                       <SelectTrigger id="jurisdiction">
                         <SelectValue />
                       </SelectTrigger>
@@ -90,7 +162,7 @@ const Ask = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="practice-area">Practice Area</Label>
-                    <Select defaultValue="contract">
+                    <Select value={practiceArea} onValueChange={setPracticeArea}>
                       <SelectTrigger id="practice-area">
                         <SelectValue />
                       </SelectTrigger>
@@ -106,7 +178,7 @@ const Ask = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="citation-style">Citation Style</Label>
-                    <Select defaultValue="bluebook">
+                    <Select value={citationStyle} onValueChange={setCitationStyle}>
                       <SelectTrigger id="citation-style">
                         <SelectValue />
                       </SelectTrigger>
@@ -120,7 +192,7 @@ const Ask = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="format">Format Type</Label>
-                    <Select defaultValue="irac">
+                    <Select value={format} onValueChange={setFormat}>
                       <SelectTrigger id="format">
                         <SelectValue />
                       </SelectTrigger>
@@ -174,62 +246,9 @@ const Ask = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue="issue" className="w-full">
-                    <TabsList className="grid w-full grid-cols-4">
-                      <TabsTrigger value="issue">Issue</TabsTrigger>
-                      <TabsTrigger value="rule">Rule</TabsTrigger>
-                      <TabsTrigger value="application">Application</TabsTrigger>
-                      <TabsTrigger value="conclusion">Conclusion</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="issue" className="space-y-4 mt-4">
-                      <div className="prose prose-sm max-w-none">
-                        <h4 className="font-semibold text-foreground">Issue Identification</h4>
-                        <p className="text-muted-foreground">
-                          The primary legal issue is whether the plaintiff can establish a valid breach of contract 
-                          claim under California law. This requires examining whether a valid contract existed, whether 
-                          the defendant breached the contract, and whether damages resulted from the breach.
-                        </p>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="rule" className="space-y-4 mt-4">
-                      <div className="prose prose-sm max-w-none">
-                        <h4 className="font-semibold text-foreground">Applicable Rules</h4>
-                        <p className="text-muted-foreground">
-                          Under California law, a breach of contract claim requires proof of: (1) the existence of a 
-                          valid contract; (2) the plaintiff's performance or excuse for nonperformance; (3) the 
-                          defendant's breach; and (4) resulting damages to the plaintiff. <em>Oasis West Realty, LLC v. 
-                          Goldman</em>, 51 Cal. 4th 811, 821 (2011).
-                        </p>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="application" className="space-y-4 mt-4">
-                      <div className="prose prose-sm max-w-none">
-                        <h4 className="font-semibold text-foreground">Application to Facts</h4>
-                        <p className="text-muted-foreground">
-                          Applying these elements to the present case, the evidence suggests that a valid written 
-                          contract was formed when both parties signed the agreement on [date]. The plaintiff 
-                          performed all obligations under the contract by [specific performance]. The defendant 
-                          breached the contract by [specific breach]. As a direct result, the plaintiff suffered 
-                          [specific damages].
-                        </p>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="conclusion" className="space-y-4 mt-4">
-                      <div className="prose prose-sm max-w-none">
-                        <h4 className="font-semibold text-foreground">Conclusion</h4>
-                        <p className="text-muted-foreground">
-                          Based on the analysis above, the plaintiff likely has a strong breach of contract claim 
-                          under California law. All four elements appear to be satisfied by the facts presented. 
-                          The plaintiff should be entitled to damages in the amount of [amount], subject to proof 
-                          at trial.
-                        </p>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
+                  <div className="prose prose-sm max-w-none whitespace-pre-wrap">
+                    {results}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -237,6 +256,8 @@ const Ask = () => {
 
           {/* Sidebar */}
           <div className="space-y-6">
+            <ModelSelector />
+            
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Recent Researches</CardTitle>
